@@ -1,4 +1,4 @@
-import os, json, requests
+import os, json, requests, re
 from flask import Flask, request
 
 app = Flask(__name__)
@@ -24,6 +24,12 @@ def save_data(data):
 
 group_data = load_data()
 
+def has_permission(group, sender_id):
+    # Equality mode: everyone has permission
+    if not group.get("admin_enabled", True):
+        return True
+    return sender_id == group["owner"] or sender_id in group["admins"]
+
 @app.route("/", methods=["POST"])
 def webhook():
     global group_data
@@ -42,7 +48,8 @@ def webhook():
             "owner": None,
             "admins": [],
             "join_message": "Welcome to the group!",
-            "triggers": []
+            "triggers": [],
+            "admin_enabled": True
         }
 
     group = group_data[group_id]
@@ -69,48 +76,66 @@ def webhook():
         else:
             send_message(bot_id, "YOU DARE TO DETHRONE THE RULER OVER THIS BOT???")
 
-    # !admin userid
-    if text.startswith("!admin"):
-        if sender_id == group["owner"]:
-            new_admin = text.replace("!admin", "").strip()
-            if new_admin:
-                group["admins"].append(new_admin)
-                send_message(bot_id, f"Added new admin: {new_admin}")
-                save_data(group_data)
-        else:
-            send_message(bot_id, "Only the owner can add admins.")
+    # !noadmins / !enableadmins
+    if text == "!noadmins" and sender_id == group["owner"]:
+        group["admin_enabled"] = False
+        send_message(bot_id, "Admin system disabled. Everyone now has full permissions.")
+        save_data(group_data)
 
-    # !joinmessage (admins only)
-    if text.startswith("!joinmessage") and sender_id in group["admins"]:
+    if text == "!enableadmins" and sender_id == group["owner"]:
+        group["admin_enabled"] = True
+        send_message(bot_id, "Admin system re-enabled. Only owner/admins have permissions.")
+        save_data(group_data)
+
+    # !admin userid
+    if text.startswith("!admin") and sender_id == group["owner"]:
+        new_admin = text.replace("!admin", "").strip()
+        if new_admin:
+            group["admins"].append(new_admin)
+            send_message(bot_id, f"Added new admin: {new_admin}")
+            save_data(group_data)
+
+    # !deladmin userid
+    if text.startswith("!deladmin") and sender_id == group["owner"]:
+        del_admin = text.replace("!deladmin", "").strip()
+        if del_admin in group["admins"]:
+            group["admins"].remove(del_admin)
+            send_message(bot_id, f"Removed admin: {del_admin}")
+            save_data(group_data)
+        else:
+            send_message(bot_id, "That user is not an admin.")
+
+    # !joinmessage (owner or admins, or equality mode)
+    if text.startswith("!joinmessage") and has_permission(group, sender_id):
         group["join_message"] = text.replace("!joinmessage", "").strip()
         send_message(bot_id, f'Join message updated: "{group["join_message"]}"')
         save_data(group_data)
 
-    # !addtrigger <word> <response>
-    if text.startswith("!addtrigger") and sender_id in group["admins"]:
+    # !addtrigger "phrase" response (owner/admins or equality mode)
+    if text.startswith("!addtrigger") and has_permission(group, sender_id):
         if len(group["triggers"]) >= 20:
             send_message(bot_id, "Trigger limit reached (20).")
         else:
-            parts = text.replace("!addtrigger", "").strip().split(" ", 1)
-            if len(parts) == 2:
-                word, response = parts[0].strip(), parts[1].strip()
+            match = re.match(r'!addtrigger\s+"([^"]+)"\s+(.+)', text)
+            if match:
+                phrase, response = match.groups()
                 trigger_id = len(group["triggers"]) + 1
-                group["triggers"].append({"id": trigger_id, "word": word, "response": response})
-                send_message(bot_id, f"A new trigger with the id of {trigger_id} was created")
+                group["triggers"].append({"id": trigger_id, "word": phrase, "response": response})
+                send_message(bot_id, f'Trigger "{phrase}" added with id {trigger_id}.')
                 save_data(group_data)
             else:
-                send_message(bot_id, "Usage: !addtrigger <word> <response message>")
+                send_message(bot_id, 'Usage: !addtrigger "phrase" <response>')
 
     # !listtriggers
     if text == "!listtriggers":
         if group["triggers"]:
-            trigger_list = ", ".join([f"{t['id']}: {t['word']} -> {t['response']}" for t in group["triggers"]])
+            trigger_list = ", ".join([f"{t['id']}: \"{t['word']}\" -> {t['response']}" for t in group["triggers"]])
             send_message(bot_id, f"Current triggers: {trigger_list}")
         else:
             send_message(bot_id, "No triggers set.")
 
     # !removetrigger id
-    if text.startswith("!removetrigger") and sender_id in group["admins"]:
+    if text.startswith("!removetrigger") and has_permission(group, sender_id):
         try:
             tid = int(text.replace("!removetrigger", "").strip())
             group["triggers"] = [t for t in group["triggers"] if t["id"] != tid]
@@ -139,16 +164,19 @@ def webhook():
             "👑 Owner Commands:\n"
             "!OWNERME!!! → Claim ownership\n"
             "!FALLENOWNER → Abdicate ownership\n"
-            "!admin <userid> → Add a new admin\n\n"
-            "🛠️ Admin Commands:\n"
+            "!admin <userid> → Add a new admin\n"
+            "!deladmin <userid> → Remove an admin\n"
+            "!noadmins → Disable admin system (everyone equal)\n"
+            "!enableadmins → Re-enable admin system\n\n"
+            "🛠️ Admin/Owner Commands:\n"
             "!joinmessage <message> → Set welcome message\n"
-            "!addtrigger <word> <response> → Add trigger (max 20)\n"
+            "!addtrigger \"phrase\" <response> → Add trigger (max 20)\n"
             "!listtriggers → Show triggers\n"
             "!removetrigger <id> → Remove trigger\n\n"
             "🙋 General User Commands:\n"
             "!userid [@username] → Get your ID or mentioned user IDs\n"
             "!help → Show this help message\n"
-            "Triggers → Bot replies when trigger words are used"
+            "Triggers → Bot replies when trigger phrases are used"
         )
         send_message(bot_id, help_message)
 
@@ -156,6 +184,8 @@ def webhook():
     if sender_type == "user":
         for t in group["triggers"]:
             if t["word"].lower() in text.lower():
-                send_message(bot_id, t["response"])
+                # Prevent self-trigger loop: don't trigger if bot just announced trigger creation
+                if not text.startswith("Trigger "):
+                    send_message(bot_id, t["response"])
 
     return "ok", 200

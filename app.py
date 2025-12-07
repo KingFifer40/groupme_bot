@@ -119,6 +119,20 @@ def webhook():
         except:
             send_message(bot_id, "Invalid trigger ID.")
 
+    # !userid command
+    if text.startswith("!userid"):
+        mentions = data.get("attachments", [])
+        mentioned_ids = []
+        for att in mentions:
+            if att.get("type") == "mentions":
+                for m in att.get("user_ids", []):
+                    mentioned_ids.append(m)
+
+        if mentioned_ids:
+            send_message(bot_id, f"Mentioned user IDs: {', '.join(mentioned_ids)}")
+        else:
+            send_message(bot_id, f"Your user ID is {sender_id}")
+
     # !help command
     if text == "!help":
         help_message = (
@@ -132,6 +146,7 @@ def webhook():
             "!listtriggers → Show triggers\n"
             "!removetrigger <id> → Remove trigger\n\n"
             "🙋 General User Commands:\n"
+            "!userid [@username] → Get your ID or mentioned user IDs\n"
             "!help → Show this help message\n"
             "Triggers → Bot replies when trigger words are used"
         )

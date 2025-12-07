@@ -117,6 +117,25 @@ def webhook():
         except:
             send_message("Invalid trigger ID.")
 
+    # !help command
+    if text == "!help":
+        help_message = (
+            "👑 Owner Commands:\n"
+            "!OWNERME!!! → Claim ownership\n"
+            "!FALLENOWNER → Abdicate ownership\n"
+            "!admin <userid> → Add a new admin\n\n"
+            "🛠️ Admin Commands:\n"
+            "!joinmessage <message> → Set welcome message\n"
+            "!addtrigger <word> <response> → Add trigger (max 20)\n"
+            "!listtriggers → Show triggers\n"
+            "!removetrigger <id> → Remove trigger\n\n"
+            "🙋 General User Commands:\n"
+            "!userid @username → Get user ID\n"
+            "!help → Show this help message\n"
+            "Triggers → Bot replies when trigger words are used"
+        )
+        send_message(help_message)
+
     # Check triggers in normal messages
     if sender_type == "user":
         for t in group["triggers"]:

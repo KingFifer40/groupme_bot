@@ -1,14 +1,9 @@
-import os
-import time
-import requests
+import os, time, json, requests
 from flask import Flask, request
 
 app = Flask(__name__)
-
 BOT_ID = os.environ.get("BOT_ID")
-ADMINS = os.environ.get("ADMINS", "").split(",")  # comma-separated user IDs
-join_message = "Welcome to the group!"
-last_join_sent = 0
+DATA_FILE = "group_data.json"
 
 def send_message(text):
     requests.post("https://api.groupme.com/v3/bots/post", json={
@@ -16,27 +11,111 @@ def send_message(text):
         "text": text
     })
 
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f)
+
+group_data = load_data()
+
 @app.route("/", methods=["POST"])
 def webhook():
-    global join_message, last_join_sent
-
+    global group_data
     data = request.get_json()
-
-    sender_type = data.get("sender_type")
-    text = data.get("text", "")
+    group_id = str(data.get("group_id"))
     sender_id = data.get("sender_id")
+    sender_type = data.get("sender_type")
+    text = (data.get("text") or "").strip()
 
-    # Handle system join messages
+    # Ensure group entry exists
+    if group_id not in group_data:
+        group_data[group_id] = {
+            "owner": None,
+            "admins": [],
+            "join_message": "Welcome to the group!",
+            "triggers": []
+        }
+
+    group = group_data[group_id]
+
+    # System join messages
     if sender_type == "system" and "has joined the group" in text:
-        now = time.time()
-        if now - last_join_sent > 5:  # 5-second rate limit
-            send_message(join_message)
-            last_join_sent = now
+        send_message(group["join_message"])
 
-    # Handle admin command
-    if sender_type == "user" and text.startswith("!joinmessage"):
-        if sender_id in ADMINS:
-            join_message = text.replace("!joinmessage", "").strip()
-            send_message(f'Join message updated: "{join_message}"')
+    # OWNERME!!!
+    if text == "!OWNERME!!!":
+        if group["owner"] is None:
+            group["owner"] = sender_id
+            send_message("You are now the OWNER of this bot!")
+            save_data(group_data)
+        else:
+            send_message("THERE IS ALREADY AN OWNER LOL 🫵🤣")
+
+    # FALLENOWNER
+    if text == "!FALLENOWNER":
+        if sender_id == group["owner"]:
+            group["owner"] = None
+            send_message("The owner has abdicated. Ownership is open again.")
+            save_data(group_data)
+        else:
+            send_message("YOU DARE TO DETHRONE THE RULER OVER THIS BOT???")
+
+    # !admin userid
+    if text.startswith("!admin"):
+        if sender_id == group["owner"]:
+            new_admin = text.replace("!admin", "").strip()
+            if new_admin:
+                group["admins"].append(new_admin)
+                send_message(f"Added new admin: {new_admin}")
+                save_data(group_data)
+        else:
+            send_message("Only the owner can add admins.")
+
+    # !joinmessage (admins only)
+    if text.startswith("!joinmessage") and sender_id in group["admins"]:
+        group["join_message"] = text.replace("!joinmessage", "").strip()
+        send_message(f'Join message updated: "{group["join_message"]}"')
+        save_data(group_data)
+
+    # !addtrigger
+    if text.startswith("!addtrigger") and sender_id in group["admins"]:
+        if len(group["triggers"]) >= 20:
+            send_message("Trigger limit reached (20).")
+        else:
+            word = text.replace("!addtrigger", "").strip()
+            if word:
+                trigger_id = len(group["triggers"]) + 1
+                group["triggers"].append({"id": trigger_id, "word": word})
+                send_message(f"A new trigger with the id of {trigger_id} was created")
+                save_data(group_data)
+
+    # !listtriggers
+    if text == "!listtriggers":
+        if group["triggers"]:
+            trigger_list = ", ".join([f"{t['id']}: {t['word']}" for t in group["triggers"]])
+            send_message(f"Current triggers: {trigger_list}")
+        else:
+            send_message("No triggers set.")
+
+    # !removetrigger id
+    if text.startswith("!removetrigger") and sender_id in group["admins"]:
+        try:
+            tid = int(text.replace("!removetrigger", "").strip())
+            group["triggers"] = [t for t in group["triggers"] if t["id"] != tid]
+            send_message(f"Trigger {tid} removed.")
+            save_data(group_data)
+        except:
+            send_message("Invalid trigger ID.")
+
+    # Check triggers in normal messages
+    if sender_type == "user":
+        for t in group["triggers"]:
+            if t["word"].lower() in text.lower():
+                send_message(f"Trigger matched: {t['word']}")
 
     return "ok", 200

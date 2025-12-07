@@ -2,12 +2,14 @@ import os, time, json, requests
 from flask import Flask, request
 
 app = Flask(__name__)
-BOT_ID = os.environ.get("BOT_ID")
+
+# Use BOT_ID env var to store your mebots token
+MEBOTS_TOKEN = os.environ.get("BOT_ID")
 DATA_FILE = "group_data.json"
 
 def send_message(text):
-    requests.post("https://api.groupme.com/v3/bots/post", json={
-        "bot_id": BOT_ID,
+    # Send messages through mebots API
+    requests.post(f"https://api.mebots.io/bot/{MEBOTS_TOKEN}/send", json={
         "text": text
     })
 
@@ -82,22 +84,25 @@ def webhook():
         send_message(f'Join message updated: "{group["join_message"]}"')
         save_data(group_data)
 
-    # !addtrigger
+    # !addtrigger <word> <response>
     if text.startswith("!addtrigger") and sender_id in group["admins"]:
         if len(group["triggers"]) >= 20:
             send_message("Trigger limit reached (20).")
         else:
-            word = text.replace("!addtrigger", "").strip()
-            if word:
+            parts = text.replace("!addtrigger", "").strip().split(" ", 1)
+            if len(parts) == 2:
+                word, response = parts[0].strip(), parts[1].strip()
                 trigger_id = len(group["triggers"]) + 1
-                group["triggers"].append({"id": trigger_id, "word": word})
+                group["triggers"].append({"id": trigger_id, "word": word, "response": response})
                 send_message(f"A new trigger with the id of {trigger_id} was created")
                 save_data(group_data)
+            else:
+                send_message("Usage: !addtrigger <word> <response message>")
 
     # !listtriggers
     if text == "!listtriggers":
         if group["triggers"]:
-            trigger_list = ", ".join([f"{t['id']}: {t['word']}" for t in group["triggers"]])
+            trigger_list = ", ".join([f"{t['id']}: {t['word']} -> {t['response']}" for t in group["triggers"]])
             send_message(f"Current triggers: {trigger_list}")
         else:
             send_message("No triggers set.")
@@ -116,6 +121,6 @@ def webhook():
     if sender_type == "user":
         for t in group["triggers"]:
             if t["word"].lower() in text.lower():
-                send_message(f"Trigger matched: {t['word']}")
+                send_message(t["response"])
 
     return "ok", 200

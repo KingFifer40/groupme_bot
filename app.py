@@ -5,11 +5,18 @@ app = Flask(__name__)
 
 DATA_FILE = "group_data.json"
 
-def send_message(bot_id, text):
-    requests.post("https://api.groupme.com/v3/bots/post", json={
+def send_message(bot_id, text, mentions=None):
+    payload = {
         "bot_id": bot_id,
         "text": text
-    })
+    }
+    if mentions:
+        payload["attachments"] = [{
+            "type": "mentions",
+            "loci": mentions["loci"],
+            "user_ids": mentions["user_ids"]
+        }]
+    requests.post("https://api.groupme.com/v3/bots/post", json=payload)
 
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -297,14 +304,25 @@ def webhook():
             if t["word"].lower() in lowered:
                 if not lowered.startswith("trigger "):
                     send_message(bot_id, t["response"])
-        # Bad triggers
-        for bt in group["bad_triggers"]:
-            if bt["word"].lower() in lowered:
-                if group["admin_enabled"] and group["admins"]:
-                    admin_pings = " ".join([f"@{uid}" for uid in group["admins"]])
-                    msg = f'You said this banned word. {bt["message"] or ""} {admin_pings}'
-                    send_message(bot_id, msg.strip())
-                elif bt["message"]:
-                    send_message(bot_id, bt["message"])
+    # Bad triggers
+    for bt in group["bad_triggers"]:
+        if bt["word"].lower() in lowered:
+            if group["admin_enabled"] and group["admins"]:
+                base_msg = f'You said this banned word. {bt["message"] or ""} '
+                loci = []
+                user_ids = []
+                pos = len(base_msg)
+
+                # Build mentions for each admin
+                for uid in group["admins"]:
+                    mention_text = "@admin"
+                    base_msg += mention_text + " "
+                    loci.append([pos, len(mention_text)])
+                    user_ids.append(uid)
+                    pos += len(mention_text) + 1
+
+                send_message(bot_id, base_msg.strip(), mentions={"loci": loci, "user_ids": user_ids})
+            elif bt["message"]:
+                send_message(bot_id, bt["message"])
 
     return "ok", 200

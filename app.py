@@ -79,6 +79,7 @@ def webhook():
     sender_id = data.get("sender_id")
     sender_type = data.get("sender_type")
     text = normalize_text((data.get("text") or "").strip())
+    lowered = text.lower()
 
     # Ensure group entry exists
     if group_id not in group_data:

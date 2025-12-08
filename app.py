@@ -308,20 +308,26 @@ def webhook():
     for bt in group["bad_triggers"]:
         if bt["word"].lower() in lowered:
             if group["admin_enabled"] and (group["admins"] or group["owner"]):
-                # Build a single @admins placeholder
-                msg_text = f'You said a banned word. {bt["message"] or ""} @admins'
-
-                # Collect all IDs (admins + owner if set)
+                base_msg = f'You said this banned word. {bt["message"] or ""} '
+                loci = []
                 user_ids = []
+                pos = len(base_msg)
+
+                # Collect all IDs (owner + admins)
+                ids_to_ping = []
                 if group["owner"]:
-                    user_ids.append(group["owner"])
-                user_ids.extend(group["admins"])
+                    ids_to_ping.append(group["owner"])
+                ids_to_ping.extend(group["admins"])
 
-                # Loci marks where "@admins" appears
-                loci = [[msg_text.index("@admins"), len("@admins")]]
+                # Add each mention separately
+                for uid in ids_to_ping:
+                    mention_text = "@admin"
+                    base_msg += mention_text + " "
+                    loci.append([pos, len(mention_text)])
+                    user_ids.append(uid)
+                    pos += len(mention_text) + 1
 
-                send_message(bot_id, msg_text, mentions={"loci": loci, "user_ids": user_ids})
+                send_message(bot_id, base_msg.strip(), mentions={"loci": loci, "user_ids": user_ids})
             elif bt["message"]:
                 send_message(bot_id, bt["message"])
-
     return "ok", 200

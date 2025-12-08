@@ -320,14 +320,17 @@ def webhook():
                 ids_to_ping.extend(group["admins"])
 
                 # Add each mention separately
-                for uid in ids_to_ping:
-                    mention_text = "@admin"
+                for idx, uid in enumerate(ids_to_ping):
+                    # Give each mention its own placeholder text
+                    mention_text = f"@admin{idx+1}"
                     base_msg += mention_text + " "
                     loci.append([pos, len(mention_text)])
                     user_ids.append(uid)
                     pos += len(mention_text) + 1
 
-                send_message(bot_id, base_msg.strip(), mentions={"loci": loci, "user_ids": user_ids})
+                send_message(bot_id, base_msg.strip(),
+                             mentions={"loci": loci, "user_ids": user_ids})
             elif bt["message"]:
                 send_message(bot_id, bt["message"])
+
     return "ok", 200

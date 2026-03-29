@@ -12,9 +12,10 @@ GROUPME_POST_URL = "https://api.groupme.com/v3/bots/post"
 # -------------------------
 
 SLURS = ["slur1", "slur2", "slur3"]  # add real ones privately
-HARASSMENT = ["kill yourself", "kys", "die", "stfu", "shut up", "loser"]
+HARASSMENT = ["kill yourself", "kys", "stfu", "shut up", "loser"]
+
 NSFW = ["porn", "nude", "sex", "onlyfans", "nsfw"]
-ADVERTISING = ["follow me", "subscribe", "promo", "discount", "use my code"]
+
 RELIGION = ["jesus", "christian", "muslim", "islam", "bible", "church"]
 POLITICS = ["trump", "biden", "democrat", "republican", "election", "senate"]
 
@@ -31,6 +32,16 @@ def contains_any(text, keywords):
     text_lower = text.lower()
     return any(word in text_lower for word in keywords)
 
+def is_external_link(text):
+    urls = re.findall(URL_REGEX, text)
+    for url in urls:
+        # Allow GroupMe-hosted media
+        if "i.groupme.com" in url:
+            continue
+        # Block everything else
+        return True
+    return False
+
 def violates_rules(message):
     text = message.lower()
 
@@ -42,9 +53,9 @@ def violates_rules(message):
     if contains_any(text, NSFW):
         return "⚠️ Rule 2: Keep it PG — no NSFW content."
 
-    # Rule 3: Advertising / links
-    if re.search(URL_REGEX, text) or contains_any(text, ADVERTISING):
-        return "⚠️ Rule 3: No advertising or links."
+    # Rule 3: External links (non-GroupMe)
+    if is_external_link(text):
+        return "⚠️ Rule 3: No external links or group invites."
 
     # Rule 6: No religion or politics
     if contains_any(text, RELIGION) or contains_any(text, POLITICS):

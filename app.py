@@ -4,6 +4,7 @@ import re
 import threading
 import time
 import os
+import json
 
 app = Flask(__name__)
 
@@ -14,7 +15,7 @@ GROUPME_POST_URL = "https://api.groupme.com/v3/bots/post"
 # Keyword Lists
 # -------------------------
 
-SLURS = ["slur1", "slur2", "slur3"]  # add real ones privately
+SLURS = ["slur1", "slur2", "slur3"]
 HARASSMENT = ["kill yourself", "kys", "stfu", "shut up", "loser"]
 
 NSFW = ["porn", "nude", "sex", "onlyfans", "nsfw"]
@@ -30,9 +31,9 @@ URL_REGEX = r"(https?://\S+|www\.\S+)"
 
 def send_message(text):
     print(f"[BOT] Sending message: {text}")
-    response = requests.post(GROUPME_POST_URL, json={"bot_id": BOT_ID, "text": text})
-    print(f"[BOT] Send status: {response.status_code}")
-    return response
+    r = requests.post(GROUPME_POST_URL, json={"bot_id": BOT_ID, "text": text})
+    print(f"[BOT] Status: {r.status_code}")
+    return r
 
 def contains_any(text, keywords):
     text_lower = text.lower()
@@ -77,16 +78,30 @@ def violates_rules(message):
 @app.route("/", methods=["POST"])
 def webhook():
     data = request.get_json()
-    print(f"[WEBHOOK] Received data: {data}")
-    print(f"[DEBUG] Full webhook payload: {data}")
 
-    if data.get("sender_type") == "bot":
-        print("[WEBHOOK] Ignored bot message")
-        return "OK", 200
+    print("\n===== NEW MESSAGE RECEIVED =====")
+    print(json.dumps(data, indent=2))
 
     text = data.get("text", "")
+    sender_type = data.get("sender_type")
+
+    # Ignore bot messages
+    if sender_type == "bot":
+        print("[INFO] Ignored bot message")
+        return "OK", 200
+
     print(f"[MESSAGE] User said: {text}")
 
+    # Test commands
+    if text.lower() == "ping":
+        send_message("pong!")
+        return "OK", 200
+
+    if text.lower() == "hello bot":
+        send_message("Hello Jared 👋")
+        return "OK", 200
+
+    # Rule enforcement
     violation = violates_rules(text)
     if violation:
         send_message(violation)

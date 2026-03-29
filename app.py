@@ -1,6 +1,9 @@
 from flask import Flask, request
 import requests
 import re
+import threading
+import time
+import os
 
 app = Flask(__name__)
 
@@ -82,6 +85,24 @@ def webhook():
         send_message(violation)
 
     return "OK", 200
+
+# -------------------------
+# Keepalive Thread (Render Free Tier)
+# -------------------------
+
+RENDER_URL = os.getenv("RENDER_URL")  # Set this in Render environment variables
+
+def keepalive():
+    if not RENDER_URL:
+        return
+    while True:
+        try:
+            requests.get(RENDER_URL)
+        except:
+            pass
+        time.sleep(300)  # ping every 5 minutes
+
+threading.Thread(target=keepalive, daemon=True).start()
 
 # -------------------------
 # Run locally

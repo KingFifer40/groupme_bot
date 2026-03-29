@@ -4,7 +4,7 @@ import re
 
 app = Flask(__name__)
 
-BOT_ID = "YOUR_BOT_ID_HERE"
+BOT_ID = "7b600877b6a2c5914f5408"
 GROUPME_POST_URL = "https://api.groupme.com/v3/bots/post"
 
 # -------------------------

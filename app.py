@@ -78,6 +78,7 @@ def violates_rules(message):
 def webhook():
     data = request.get_json()
     print(f"[WEBHOOK] Received data: {data}")
+    print(f"[DEBUG] Full webhook payload: {data}")
 
     if data.get("sender_type") == "bot":
         print("[WEBHOOK] Ignored bot message")

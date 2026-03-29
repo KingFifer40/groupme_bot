@@ -1,60 +1,80 @@
-import os
-import requests
 from flask import Flask, request
+import requests
+import re
 
 app = Flask(__name__)
 
-# BOT_ID must be set in Render → Environment Variables
-BOT_ID = os.getenv("BOT_ID")
+BOT_ID = "YOUR_BOT_ID_HERE"
+GROUPME_POST_URL = "https://api.groupme.com/v3/bots/post"
 
+# -------------------------
+# Keyword Lists
+# -------------------------
 
-def send_message(text: str):
-    """Send a message back to GroupMe using the bot ID."""
-    if not BOT_ID:
-        print("ERROR: BOT_ID is not set in environment variables!")
-        return
+SLURS = ["slur1", "slur2", "slur3"]  # add real ones privately
+HARASSMENT = ["kill yourself", "kys", "die", "stfu", "shut up", "loser"]
+NSFW = ["porn", "nude", "sex", "onlyfans", "nsfw"]
+ADVERTISING = ["follow me", "subscribe", "promo", "discount", "use my code"]
+RELIGION = ["jesus", "christian", "muslim", "islam", "bible", "church"]
+POLITICS = ["trump", "biden", "democrat", "republican", "election", "senate"]
 
-    payload = {
-        "bot_id": BOT_ID,
-        "text": text
-    }
+URL_REGEX = r"(https?://\S+|www\.\S+)"
 
-    try:
-        r = requests.post("https://api.groupme.com/v3/bots/post", json=payload)
-        print("Send message response:", r.status_code, r.text)
-    except Exception as e:
-        print("Error sending message:", e)
+# -------------------------
+# Helper Functions
+# -------------------------
 
+def send_message(text):
+    requests.post(GROUPME_POST_URL, json={"bot_id": BOT_ID, "text": text})
 
-@app.route("/", methods=["GET"])
-def home():
-    """GET route so you can verify the bot is alive in a browser."""
-    return "Bot is running!", 200
+def contains_any(text, keywords):
+    text_lower = text.lower()
+    return any(word in text_lower for word in keywords)
 
+def violates_rules(message):
+    text = message.lower()
+
+    # Rule 1: Harassment / slurs / hate
+    if contains_any(text, SLURS) or contains_any(text, HARASSMENT):
+        return "⚠️ Rule 1: Please keep things respectful."
+
+    # Rule 2: NSFW
+    if contains_any(text, NSFW):
+        return "⚠️ Rule 2: Keep it PG — no NSFW content."
+
+    # Rule 3: Advertising / links
+    if re.search(URL_REGEX, text) or contains_any(text, ADVERTISING):
+        return "⚠️ Rule 3: No advertising or links."
+
+    # Rule 6: No religion or politics
+    if contains_any(text, RELIGION) or contains_any(text, POLITICS):
+        return "⚠️ Rule 6: No religion or politics in the chat."
+
+    return None
+
+# -------------------------
+# Webhook Endpoint
+# -------------------------
 
 @app.route("/", methods=["POST"])
 def webhook():
-    """Main webhook for GroupMe/Mebots."""
     data = request.get_json()
-    print("Incoming POST:", data)
 
-    if not data:
-        return "no data", 200
+    # Ignore bot messages
+    if data.get("sender_type") == "bot":
+        return "OK", 200
 
-    text = (data.get("text") or "").strip()
-    sender_type = data.get("sender_type")
+    text = data.get("text", "")
 
-    # Ignore messages from bots (including itself)
-    if sender_type == "bot":
-        return "ok", 200
+    violation = violates_rules(text)
+    if violation:
+        send_message(violation)
 
-    # Test command
-    if text.lower() == "!test":
-        send_message("bot is working!")
+    return "OK", 200
 
-    return "ok", 200
-
+# -------------------------
+# Run locally
+# -------------------------
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000)

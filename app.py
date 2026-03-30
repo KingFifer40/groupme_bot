@@ -57,6 +57,7 @@ register_help("admin", "!addtrigger \"phrase\" <response>", "Add a custom trigge
 register_help("admin", "!removetrigger <id>", "Remove a trigger")
 register_help("admin", "!addbadtrigger \"word\" [msg]", "Add a bad word trigger")
 register_help("admin", "!removebad <id>", "Remove a bad trigger")
+register_help("admin", "!refreshadmins", "Force-refresh admin list from GroupMe")
 
 register_help("general", "!userid", "Show your user ID")
 register_help("general", "!help", "Show the help menu")
@@ -180,34 +181,35 @@ def webhook():
     group = group_data[group_id]
 
     # -------------------------
-    # AUTO-SYNC GROUP ADMINS
+    # AUTO-PATCH + AUTO-SYNC ADMIN SYSTEM
     # -------------------------
 
     changed = False
 
-    # Ensure fields exist
-    if "bot_owner" not in group:
-        group["bot_owner"] = None
-        changed = True
+    # Ensure all required fields exist
+    defaults = {
+        "bot_owner": None,
+        "bot_admins": [],
+        "group_owner": None,
+        "group_admins": [],
+        "join_message": "Welcome to the group!",
+        "triggers": [],
+        "bad_triggers": [],
+        "admin_enabled": True,
+        "bot_enabled": True
+    }
 
-    if "bot_admins" not in group:
-        group["bot_admins"] = []
-        changed = True
+    for key, value in defaults.items():
+        if key not in group:
+            group[key] = value
+            changed = True
 
-    if "group_admins" not in group:
-        group["group_admins"] = []
-        changed = True
-
-    if "group_owner" not in group:
-        group["group_owner"] = None
-        changed = True
-
-    # Update real group owner
+    # Sync real group owner
     if is_group_owner and group["group_owner"] != sender_id:
         group["group_owner"] = sender_id
         changed = True
 
-    # Add real group admins
+    # Sync real group admins
     if is_group_admin and sender_id not in group["group_admins"]:
         group["group_admins"].append(sender_id)
         changed = True
@@ -292,6 +294,34 @@ def webhook():
             send_message(bot_id, "Bot re-enabled.")
         else:
             send_message(bot_id, "You lack permission to enable the bot.")
+        return "ok", 200
+
+    # -------------------------
+    # REFRESH ADMINS COMMAND
+    # -------------------------
+
+    if text == "!refreshadmins" and has_permission(group, sender_id):
+        changed = False
+
+        # Reset real admin lists
+        group["group_admins"] = []
+        changed = True
+
+        # Re-detect sender's roles
+        if is_group_owner:
+            group["group_owner"] = sender_id
+            changed = True
+
+        if is_group_admin and sender_id not in group["group_admins"]:
+            group["group_admins"].append(sender_id)
+            changed = True
+
+        if changed:
+            save_data({"groups": group_data})
+            send_message(bot_id, "Admin list refreshed from GroupMe.")
+        else:
+            send_message(bot_id, "Admin list already up to date.")
+
         return "ok", 200
 
     # -------------------------

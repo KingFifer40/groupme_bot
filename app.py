@@ -200,29 +200,29 @@ def webhook():
         send_message(bot_id, f'Join message updated: "{group["join_message"]}"')
         save_data({"groups": group_data})
 
-# !addtrigger
-if text.lower().startswith("!addtrigger") and has_permission(group, sender_id):
-    if len(group["triggers"]) >= 20:
-        send_message(bot_id, "Trigger limit reached (20).")
-    else:
-        phrase, response = parse_addtrigger(text)
-        if phrase and response:
-            new_word = phrase.lower()
-
-            # Check for duplicates or substring overlaps
-            for t in group["triggers"]:
-                existing = t["word"].lower()
-                if existing in new_word or new_word in existing:
-                    send_message(bot_id, f'Cannot add trigger "{phrase}" because it overlaps with existing trigger "{t["word"]}".')
-                    return "ok", 200
-
-            # Safe to add
-            next_id = (max([t["id"] for t in group["triggers"]] or [0]) + 1)
-            group["triggers"].append({"id": next_id, "word": phrase, "response": response})
-            send_message(bot_id, f'Trigger "{phrase}" added with id {next_id}.')
-            save_data({"groups": group_data})
+    # !addtrigger
+    if text.lower().startswith("!addtrigger") and has_permission(group, sender_id):
+        if len(group["triggers"]) >= 20:
+            send_message(bot_id, "Trigger limit reached (20).")
         else:
-            send_message(bot_id, 'Usage: !addtrigger "phrase" <response>')
+            phrase, response = parse_addtrigger(text)
+            if phrase and response:
+                new_word = phrase.lower()
+    
+                # Check for duplicates or substring overlaps
+                for t in group["triggers"]:
+                    existing = t["word"].lower()
+                    if existing in new_word or new_word in existing:
+                        send_message(bot_id, f'Cannot add trigger "{phrase}" because it overlaps with existing trigger "{t["word"]}".')
+                        return "ok", 200
+    
+                # Safe to add
+                next_id = (max([t["id"] for t in group["triggers"]] or [0]) + 1)
+                group["triggers"].append({"id": next_id, "word": phrase, "response": response})
+                send_message(bot_id, f'Trigger "{phrase}" added with id {next_id}.')
+                save_data({"groups": group_data})
+            else:
+                send_message(bot_id, 'Usage: !addtrigger "phrase" <response>')
 
 
     # !listtriggers
@@ -248,28 +248,28 @@ if text.lower().startswith("!addtrigger") and has_permission(group, sender_id):
         except:
             send_message(bot_id, "Invalid trigger ID.")
 
-# !addbadtrigger
-if text.lower().startswith("!addbadtrigger") and has_permission(group, sender_id):
-    if len(group["bad_triggers"]) >= 30:
-        send_message(bot_id, "Bad trigger limit reached (30).")
-    else:
-        word, msg = parse_addbadtrigger(text)
-        if word:
-            new_word = word.lower()
-
-            # Check for duplicates or substring overlaps
-            for bt in group["bad_triggers"]:
-                existing = bt["word"].lower()
-                if existing in new_word or new_word in existing:
-                    send_message(bot_id, f'Cannot add bad trigger "{word}" because it overlaps with existing bad trigger "{bt["word"]}".')
-                    return "ok", 200
-
-            next_id = (max([t["id"] for t in group["bad_triggers"]] or [0]) + 1)
-            group["bad_triggers"].append({"id": next_id, "word": word, "message": msg})
-            send_message(bot_id, f'Bad trigger "{word}" added with id {next_id}.')
-            save_data({"groups": group_data})
+    # !addbadtrigger
+    if text.lower().startswith("!addbadtrigger") and has_permission(group, sender_id):
+        if len(group["bad_triggers"]) >= 30:
+            send_message(bot_id, "Bad trigger limit reached (30).")
         else:
-            send_message(bot_id, 'Usage: !addbadtrigger "badword" [optional_message]')
+            word, msg = parse_addbadtrigger(text)
+            if word:
+                new_word = word.lower()
+    
+                # Check for duplicates or substring overlaps
+                for bt in group["bad_triggers"]:
+                    existing = bt["word"].lower()
+                    if existing in new_word or new_word in existing:
+                        send_message(bot_id, f'Cannot add bad trigger "{word}" because it overlaps with existing bad trigger "{bt["word"]}".')
+                        return "ok", 200
+    
+                next_id = (max([t["id"] for t in group["bad_triggers"]] or [0]) + 1)
+                group["bad_triggers"].append({"id": next_id, "word": word, "message": msg})
+                send_message(bot_id, f'Bad trigger "{word}" added with id {next_id}.')
+                save_data({"groups": group_data})
+            else:
+                send_message(bot_id, 'Usage: !addbadtrigger "badword" [optional_message]')
 
     # !listbad
     if text == "!listbad":

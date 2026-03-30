@@ -34,13 +34,42 @@ data_root = load_data()
 group_data = data_root.get("groups", {})
 
 # -------------------------
-# BOT LOGIC (unchanged)
+# HELP REGISTRY (MODULAR)
+# -------------------------
+
+HELP_ENTRIES = {
+    "owner": [],
+    "admin": [],
+    "general": []
+}
+
+def register_help(section, command, description):
+    HELP_ENTRIES[section].append(f"{command} → {description}")
+
+# Register base commands
+register_help("owner", "!OWNERME!!!", "Claim ownership of the bot")
+register_help("owner", "!FALLENOWNER", "Abdicate ownership")
+register_help("owner", "!disable", "Disable the bot entirely")
+register_help("owner", "!enable", "Re-enable the bot")
+
+register_help("admin", "!joinmessage <msg>", "Set the join message")
+register_help("admin", "!addtrigger \"phrase\" <response>", "Add a custom trigger")
+register_help("admin", "!removetrigger <id>", "Remove a trigger")
+register_help("admin", "!addbadtrigger \"word\" [msg]", "Add a bad word trigger")
+register_help("admin", "!removebad <id>", "Remove a bad trigger")
+
+register_help("general", "!userid", "Show your user ID")
+register_help("general", "!help", "Show the help menu")
+
+# -------------------------
+# BOT UTILITIES
 # -------------------------
 
 def send_message(bot_id, text, mentions=None):
+    signature = "\u200B"  # invisible marker
     payload = {
         "bot_id": bot_id,
-        "text": text
+        "text": text + signature
     }
     if mentions:
         payload["attachments"] = [{
@@ -86,6 +115,10 @@ def parse_addbadtrigger(text: str):
         return word.strip(), msg.strip() if msg else None
     return None, None
 
+# -------------------------
+# WEBHOOK START
+# -------------------------
+
 @app.route("/", methods=["POST"])
 def webhook():
     global group_data
@@ -95,13 +128,16 @@ def webhook():
     data_root = load_data()
     group_data = data_root.get("groups", {})
 
-    
     bot_id = data.get("bot", {}).get("id") or data.get("bot_id")
     group_id = str(data.get("group_id"))
     sender_id = data.get("sender_id")
     sender_type = data.get("sender_type")
     text = normalize_text((data.get("text") or "").strip())
     lowered = text.lower()
+
+    # Ignore bot's own messages (signature check)
+    if text.endswith("\u200B"):
+        return "ok", 200
 
     # Ensure group entry exists
     if group_id not in group_data:
@@ -111,11 +147,16 @@ def webhook():
             "join_message": "Welcome to the group!",
             "triggers": [],
             "bad_triggers": [],
-            "admin_enabled": True
+            "admin_enabled": True,
+            "bot_enabled": True
         }
         save_data({"groups": group_data})
 
     group = group_data[group_id]
+
+    # If bot is disabled, only allow !enable
+    if not group["bot_enabled"] and text != "!enable":
+        return "ok", 200
 
     # System join messages
     if sender_type == "system" and "has joined the group" in text:
@@ -130,25 +171,42 @@ def webhook():
         else:
             send_message(bot_id, "THERE IS ALREADY AN OWNER LOL 🫵🤣")
 
-    # FALLENOWNER
+    # FALLENOWNER (customized)
     if text == "!FALLENOWNER":
-        if sender_id == group["owner"]:
-            group["owner"] = None
-            send_message(bot_id, "The owner has abdicated. Ownership is open again.")
-            save_data({"groups": group_data})
+        if sender_id != group["owner"]:
+            send_message(bot_id, "Why are you trying to overthrow my king? 😡")
         else:
-            send_message(bot_id, "YOU DARE TO DETHRONE THE RULER OVER THIS BOT???")
+            group["owner"] = None
+            save_data({"groups": group_data})
+            send_message(bot_id, "The throne is now empty. A new ruler may rise.")
+
+    # !disable
+    if text == "!disable" and has_permission(group, sender_id):
+        group["bot_enabled"] = False
+        save_data({"groups": group_data})
+        send_message(bot_id, "Bot disabled. Only !enable will work now.")
+        return "ok", 200
+
+    # !enable
+    if text == "!enable":
+        if has_permission(group, sender_id):
+            group["bot_enabled"] = True
+            save_data({"groups": group_data})
+            send_message(bot_id, "Bot re-enabled.")
+        else:
+            send_message(bot_id, "You lack the authority to awaken me.")
+        return "ok", 200
 
     # !noadmins / !enableadmins
     if text == "!noadmins" and sender_id == group["owner"]:
         group["admin_enabled"] = False
-        send_message(bot_id, "Admin system disabled. Everyone now has full permissions.")
         save_data({"groups": group_data})
+        send_message(bot_id, "Admin system disabled. Everyone now has full permissions.")
 
     if text == "!enableadmins" and sender_id == group["owner"]:
         group["admin_enabled"] = True
-        send_message(bot_id, "Admin system re-enabled. Only owner/admins have permissions.")
         save_data({"groups": group_data})
+        send_message(bot_id, "Admin system re-enabled. Only owner/admins have permissions.")
 
     # Mentions helper
     def mentioned_user_ids():
@@ -171,8 +229,8 @@ def webhook():
                 group["admins"].append(uid)
                 added.append(uid)
         if added:
-            send_message(bot_id, f"Added admin(s): {', '.join(added)}")
             save_data({"groups": group_data})
+            send_message(bot_id, f"Added admin(s): {', '.join(added)}")
         else:
             send_message(bot_id, "No new admins added.")
 
@@ -189,18 +247,21 @@ def webhook():
                 group["admins"].remove(uid)
                 removed.append(uid)
         if removed:
-            send_message(bot_id, f"Removed admin(s): {', '.join(removed)}")
             save_data({"groups": group_data})
+            send_message(bot_id, f"Removed admin(s): {', '.join(removed)}")
         else:
             send_message(bot_id, "No matching admins to remove.")
 
     # !joinmessage
     if text.startswith("!joinmessage") and has_permission(group, sender_id):
         group["join_message"] = text.replace("!joinmessage", "").strip()
-        send_message(bot_id, f'Join message updated: "{group["join_message"]}"')
         save_data({"groups": group_data})
+        send_message(bot_id, f'Join message updated: "{group["join_message"]}"')
 
-    # !addtrigger
+    # -------------------------
+    # ADD TRIGGER (with overlap protection)
+    # -------------------------
+
     if text.lower().startswith("!addtrigger") and has_permission(group, sender_id):
         if len(group["triggers"]) >= 20:
             send_message(bot_id, "Trigger limit reached (20).")
@@ -208,22 +269,20 @@ def webhook():
             phrase, response = parse_addtrigger(text)
             if phrase and response:
                 new_word = phrase.lower()
-    
+
                 # Check for duplicates or substring overlaps
                 for t in group["triggers"]:
                     existing = t["word"].lower()
                     if existing in new_word or new_word in existing:
                         send_message(bot_id, f'Cannot add trigger "{phrase}" because it overlaps with existing trigger "{t["word"]}".')
                         return "ok", 200
-    
-                # Safe to add
+
                 next_id = (max([t["id"] for t in group["triggers"]] or [0]) + 1)
                 group["triggers"].append({"id": next_id, "word": phrase, "response": response})
-                send_message(bot_id, f'Trigger "{phrase}" added with id {next_id}.')
                 save_data({"groups": group_data})
+                send_message(bot_id, f'Trigger "{phrase}" added with id {next_id}.')
             else:
                 send_message(bot_id, 'Usage: !addtrigger "phrase" <response>')
-
 
     # !listtriggers
     if text == "!listtriggers":
@@ -241,14 +300,17 @@ def webhook():
             group["triggers"] = [t for t in group["triggers"] if t["id"] != tid]
             after = len(group["triggers"])
             if before != after:
-                send_message(bot_id, f"Trigger {tid} removed.")
                 save_data({"groups": group_data})
+                send_message(bot_id, f"Trigger {tid} removed.")
             else:
                 send_message(bot_id, "Invalid trigger ID.")
         except:
             send_message(bot_id, "Invalid trigger ID.")
 
-    # !addbadtrigger
+    # -------------------------
+    # ADD BAD TRIGGER (with overlap protection)
+    # -------------------------
+
     if text.lower().startswith("!addbadtrigger") and has_permission(group, sender_id):
         if len(group["bad_triggers"]) >= 30:
             send_message(bot_id, "Bad trigger limit reached (30).")
@@ -256,18 +318,17 @@ def webhook():
             word, msg = parse_addbadtrigger(text)
             if word:
                 new_word = word.lower()
-    
-                # Check for duplicates or substring overlaps
+
                 for bt in group["bad_triggers"]:
                     existing = bt["word"].lower()
                     if existing in new_word or new_word in existing:
                         send_message(bot_id, f'Cannot add bad trigger "{word}" because it overlaps with existing bad trigger "{bt["word"]}".')
                         return "ok", 200
-    
+
                 next_id = (max([t["id"] for t in group["bad_triggers"]] or [0]) + 1)
                 group["bad_triggers"].append({"id": next_id, "word": word, "message": msg})
-                send_message(bot_id, f'Bad trigger "{word}" added with id {next_id}.')
                 save_data({"groups": group_data})
+                send_message(bot_id, f'Bad trigger "{word}" added with id {next_id}.')
             else:
                 send_message(bot_id, 'Usage: !addbadtrigger "badword" [optional_message]')
 
@@ -287,8 +348,8 @@ def webhook():
             group["bad_triggers"] = [t for t in group["bad_triggers"] if t["id"] != tid]
             after = len(group["bad_triggers"])
             if before != after:
-                send_message(bot_id, f"Bad trigger {tid} removed.")
                 save_data({"groups": group_data})
+                send_message(bot_id, f"Bad trigger {tid} removed.")
             else:
                 send_message(bot_id, "Invalid bad trigger ID.")
         except:
@@ -302,7 +363,8 @@ def webhook():
             "join_message": "Welcome to the group!",
             "triggers": [],
             "bad_triggers": [],
-            "admin_enabled": True
+            "admin_enabled": True,
+            "bot_enabled": True
         }
         save_data({"groups": group_data})
         send_message(bot_id, "Group data has been reset. Fresh start!")
@@ -315,39 +377,32 @@ def webhook():
         else:
             send_message(bot_id, f"Your user ID is {sender_id}")
 
-    # !help
+    # !help (modular)
     if text == "!help":
-        help_message = (
-            "👑 Owner Commands:\n"
-            "!OWNERME!!! → Claim ownership\n"
-            "!FALLENOWNER → Abdicate ownership\n"
-            "!admin <userid>|@user → Add admin\n"
-            "!deladmin <userid>|@user → Remove admin\n"
-            "!noadmins → Disable admin system\n"
-            "!enableadmins → Re-enable admin system\n"
-            "!reset → Reset all group data\n\n"
-            "🛠️ Admin/Owner Commands:\n"
-            "!joinmessage <message>\n"
-            "!addtrigger \"phrase\" <response>\n"
-            "!listtriggers\n"
-            "!removetrigger <id>\n"
-            "!addbadtrigger \"badword\" [optional_message]\n"
-            "!listbad\n"
-            "!removebad <id>\n\n"
-            "🙋 General:\n"
-            "!userid [@user]\n"
-            "!help"
-        )
-        send_message(bot_id, help_message)
+        msg = "📘 **Help Menu**\n\n"
 
-    # Normal triggers
+        if group["bot_enabled"]:
+            msg += "👑 **Owner Commands**\n" + "\n".join(HELP_ENTRIES["owner"]) + "\n\n"
+            msg += "🛠️ **Admin Commands**\n" + "\n".join(HELP_ENTRIES["admin"]) + "\n\n"
+
+        msg += "🙋 **General Commands**\n" + "\n".join(HELP_ENTRIES["general"])
+
+        send_message(bot_id, msg)
+
+    # -------------------------
+    # NORMAL TRIGGERS
+    # -------------------------
+
     if sender_type == "user":
         for t in group["triggers"]:
             if t["word"].lower() in lowered:
                 if not lowered.startswith("trigger "):
                     send_message(bot_id, t["response"])
 
-    # Bad triggers
+    # -------------------------
+    # BAD TRIGGERS
+    # -------------------------
+
     for bt in group["bad_triggers"]:
         if bt["word"].lower() in lowered:
             if group["admin_enabled"] and (group["admins"] or group["owner"]):

@@ -126,7 +126,7 @@ def ping():
 def keepalive():
     while True:
         try:
-            requests.get("https://YOUR-RENDER-URL.onrender.com/ping")
+            requests.get("https://groupme-bot-gtol.onrender.com/ping")
         except:
             pass
         time.sleep(240)  # ping every 4 minutes

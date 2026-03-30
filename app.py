@@ -29,10 +29,6 @@ def save_data(data):
     r = requests.put(JSONBIN_URL, json=data, headers=headers)
     print("[JSONBIN] Save status:", r.status_code, r.text)
 
-# Load root data
-data_root = load_data()
-group_data = data_root.get("groups", {})
-
 # -------------------------
 # HELP REGISTRY (MODULAR)
 # -------------------------
@@ -138,10 +134,9 @@ threading.Thread(target=keepalive, daemon=True).start()
 
 @app.route("/", methods=["POST"])
 def webhook():
-    global group_data
     data = request.get_json()
 
-    # Always reload latest data from JSONBin
+    # Always load fresh data from JSONBin — no global state
     data_root = load_data()
     group_data = data_root.get("groups", {})
 
@@ -230,22 +225,14 @@ def webhook():
     # -------------------------
 
     def has_permission(group, sender_id):
-        # Bot owner always has permission
         if sender_id == group.get("bot_owner"):
             return True
-
-        # Real group owner always has permission
         if sender_id == group.get("group_owner"):
             return True
-
-        # Real group admins always have permission
         if sender_id in group.get("group_admins", []):
             return True
-
-        # Bot-specific admins have permission
         if sender_id in group.get("bot_admins", []):
             return True
-
         return False
 
     # -------------------------
@@ -520,11 +507,11 @@ def webhook():
     # -------------------------
 
     if text == "!help":
-        msg = "📘 **Help Menu**\n\n"
+        msg = "📘 Help Menu\n\n"
 
-        msg += "👑 **Owner Commands**\n" + "\n".join(HELP_ENTRIES["owner"]) + "\n\n"
-        msg += "🛠️ **Admin Commands**\n" + "\n".join(HELP_ENTRIES["admin"]) + "\n\n"
-        msg += "🙋 **General Commands**\n" + "\n".join(HELP_ENTRIES["general"])
+        msg += "👑 Owner Commands\n" + "\n".join(HELP_ENTRIES["owner"]) + "\n\n"
+        msg += "🛠️ Admin Commands\n" + "\n".join(HELP_ENTRIES["admin"]) + "\n\n"
+        msg += "🙋 General Commands\n" + "\n".join(HELP_ENTRIES["general"])
 
         send_message(bot_id, msg)
         return "ok", 200

@@ -172,6 +172,39 @@ def webhook():
 
     group = group_data[group_id]
 
+    # -------------------------
+    # PATCH MISSING FIELDS (fixes KeyError: 'bot_enabled')
+    # -------------------------
+
+    changed = False
+
+    if "bot_enabled" not in group:
+        group["bot_enabled"] = True
+        changed = True
+
+    if "admin_enabled" not in group:
+        group["admin_enabled"] = True
+        changed = True
+
+    if "triggers" not in group:
+        group["triggers"] = []
+        changed = True
+
+    if "bad_triggers" not in group:
+        group["bad_triggers"] = []
+        changed = True
+
+    if "admins" not in group:
+        group["admins"] = []
+        changed = True
+
+    if "join_message" not in group:
+        group["join_message"] = "Welcome to the group!"
+        changed = True
+
+    if changed:
+        save_data({"groups": group_data})
+
     # If bot is disabled, only allow !enable
     if not group["bot_enabled"] and text != "!enable":
         return "ok", 200

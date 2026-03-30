@@ -1,4 +1,4 @@
-import os, json, requests, re, time
+import os, json, requests, re, time, threading
 from flask import Flask, request
 
 app = Flask(__name__)
@@ -114,6 +114,24 @@ def parse_addbadtrigger(text: str):
         word, msg = m.groups()
         return word.strip(), msg.strip() if msg else None
     return None, None
+
+# -------------------------
+# KEEPALIVE (Render Free Tier)
+# -------------------------
+
+@app.route("/ping")
+def ping():
+    return "pong", 200
+
+def keepalive():
+    while True:
+        try:
+            requests.get("https://YOUR-RENDER-URL.onrender.com/ping")
+        except:
+            pass
+        time.sleep(240)  # ping every 4 minutes
+
+threading.Thread(target=keepalive, daemon=True).start()
 
 # -------------------------
 # WEBHOOK START

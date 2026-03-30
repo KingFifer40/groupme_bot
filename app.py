@@ -3,7 +3,39 @@ from flask import Flask, request
 
 app = Flask(__name__)
 
-DATA_FILE = "group_data.json"
+# -------------------------
+# JSONBIN CONFIG
+# -------------------------
+
+JSONBIN_API_KEY = os.getenv("JSONBIN_API_KEY", "$2a$10$nAb7Htoy3JbgFAbMoYKKw.wLVuNXKXAhRNPwY.2Mm.gT7YlJT0WDW")  # fake placeholder
+JSONBIN_BIN_ID = os.getenv("JSONBIN_BIN_ID", "69c9c7c4856a682189ddf11b")
+
+JSONBIN_URL = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
+
+def load_data():
+    headers = {"X-Master-Key": JSONBIN_API_KEY}
+    r = requests.get(JSONBIN_URL, headers=headers)
+    if r.status_code == 200:
+        print("[JSONBIN] Loaded data successfully")
+        return r.json()["record"]
+    print("[JSONBIN] Failed to load data:", r.text)
+    return {"groups": {}}
+
+def save_data(data):
+    headers = {
+        "Content-Type": "application/json",
+        "X-Master-Key": JSONBIN_API_KEY
+    }
+    r = requests.put(JSONBIN_URL, json=data, headers=headers)
+    print("[JSONBIN] Save status:", r.status_code, r.text)
+
+# Load root data
+data_root = load_data()
+group_data = data_root.get("groups", {})
+
+# -------------------------
+# BOT LOGIC (unchanged)
+# -------------------------
 
 def send_message(bot_id, text, mentions=None):
     payload = {
@@ -18,42 +50,28 @@ def send_message(bot_id, text, mentions=None):
         }]
     requests.post("https://api.groupme.com/v3/bots/post", json=payload)
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_data(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f)
-
-group_data = load_data()
-
 def has_permission(group, sender_id):
     if not group.get("admin_enabled", True):
         return True
     return sender_id == group["owner"] or sender_id in group["admins"]
 
-# Normalize “smart” quotes and other variants to ASCII
 def normalize_text(s: str) -> str:
     if not s:
         return s
     return (
-        s.replace("\u201C", "\"")  # Left double quote “
-         .replace("\u201D", "\"")  # Right double quote ”
-         .replace("\u201E", "\"")  # Low double quote „
-         .replace("\u201F", "\"")  # Double high-reversed-9 quotation mark ‟
-         .replace("\u00AB", "\"")  # «
-         .replace("\u00BB", "\"")  # »
-         .replace("\u2033", "\"")  # Double prime ″
-         .replace("\u2018", "'")   # Left single quote ‘
-         .replace("\u2019", "'")   # Right single quote ’
-         .replace("\u201A", "'")   # Single low-9 quote ‚
-         .replace("\u2032", "'")   # Prime ′
+        s.replace("\u201C", "\"")
+         .replace("\u201D", "\"")
+         .replace("\u201E", "\"")
+         .replace("\u201F", "\"")
+         .replace("\u00AB", "\"")
+         .replace("\u00BB", "\"")
+         .replace("\u2033", "\"")
+         .replace("\u2018", "'")
+         .replace("\u2019", "'")
+         .replace("\u201A", "'")
+         .replace("\u2032", "'")
     )
 
-# Parse: !addtrigger "<phrase>" <response>
 def parse_addtrigger(text: str):
     m = re.match(r'!addtrigger\s+["\']([^"\']+)["\']\s+(.+)', text, flags=re.IGNORECASE)
     if m:
@@ -61,7 +79,6 @@ def parse_addtrigger(text: str):
         return phrase.strip(), response.strip()
     return None, None
 
-# Parse: !addbadtrigger "badword" optional_message
 def parse_addbadtrigger(text: str):
     m = re.match(r'!addbadtrigger\s+["\']([^"\']+)["\']\s*(.*)', text, flags=re.IGNORECASE)
     if m:
@@ -88,9 +105,10 @@ def webhook():
             "admins": [],
             "join_message": "Welcome to the group!",
             "triggers": [],
-            "bad_triggers": [],   # NEW: bad word triggers
+            "bad_triggers": [],
             "admin_enabled": True
         }
+        save_data({"groups": group_data})
 
     group = group_data[group_id]
 
@@ -103,7 +121,7 @@ def webhook():
         if group["owner"] is None:
             group["owner"] = sender_id
             send_message(bot_id, "You are now the OWNER of this bot!")
-            save_data(group_data)
+            save_data({"groups": group_data})
         else:
             send_message(bot_id, "THERE IS ALREADY AN OWNER LOL 🫵🤣")
 
@@ -112,20 +130,20 @@ def webhook():
         if sender_id == group["owner"]:
             group["owner"] = None
             send_message(bot_id, "The owner has abdicated. Ownership is open again.")
-            save_data(group_data)
+            save_data({"groups": group_data})
         else:
             send_message(bot_id, "YOU DARE TO DETHRONE THE RULER OVER THIS BOT???")
-            
+
     # !noadmins / !enableadmins
     if text == "!noadmins" and sender_id == group["owner"]:
         group["admin_enabled"] = False
         send_message(bot_id, "Admin system disabled. Everyone now has full permissions.")
-        save_data(group_data)
+        save_data({"groups": group_data})
 
     if text == "!enableadmins" and sender_id == group["owner"]:
         group["admin_enabled"] = True
         send_message(bot_id, "Admin system re-enabled. Only owner/admins have permissions.")
-        save_data(group_data)
+        save_data({"groups": group_data})
 
     # Mentions helper
     def mentioned_user_ids():
@@ -135,7 +153,7 @@ def webhook():
                 ids.extend(att.get("user_ids", []))
         return ids
 
-    # !admin @mention or !admin userid
+    # !admin
     if text.startswith("!admin") and sender_id == group["owner"]:
         ids = mentioned_user_ids()
         if not ids:
@@ -149,11 +167,11 @@ def webhook():
                 added.append(uid)
         if added:
             send_message(bot_id, f"Added admin(s): {', '.join(added)}")
-            save_data(group_data)
+            save_data({"groups": group_data})
         else:
             send_message(bot_id, "No new admins added.")
 
-    # !deladmin @mention or !deladmin userid
+    # !deladmin
     if text.startswith("!deladmin") and sender_id == group["owner"]:
         ids = mentioned_user_ids()
         if not ids:
@@ -167,7 +185,7 @@ def webhook():
                 removed.append(uid)
         if removed:
             send_message(bot_id, f"Removed admin(s): {', '.join(removed)}")
-            save_data(group_data)
+            save_data({"groups": group_data})
         else:
             send_message(bot_id, "No matching admins to remove.")
 
@@ -175,7 +193,7 @@ def webhook():
     if text.startswith("!joinmessage") and has_permission(group, sender_id):
         group["join_message"] = text.replace("!joinmessage", "").strip()
         send_message(bot_id, f'Join message updated: "{group["join_message"]}"')
-        save_data(group_data)
+        save_data({"groups": group_data})
 
     # !addtrigger
     if text.lower().startswith("!addtrigger") and has_permission(group, sender_id):
@@ -187,7 +205,7 @@ def webhook():
                 next_id = (max([t["id"] for t in group["triggers"]] or [0]) + 1)
                 group["triggers"].append({"id": next_id, "word": phrase, "response": response})
                 send_message(bot_id, f'Trigger "{phrase}" added with id {next_id}.')
-                save_data(group_data)
+                save_data({"groups": group_data})
             else:
                 send_message(bot_id, 'Usage: !addtrigger "phrase" <response>')
 
@@ -208,7 +226,7 @@ def webhook():
             after = len(group["triggers"])
             if before != after:
                 send_message(bot_id, f"Trigger {tid} removed.")
-                save_data(group_data)
+                save_data({"groups": group_data})
             else:
                 send_message(bot_id, "Invalid trigger ID.")
         except:
@@ -224,7 +242,7 @@ def webhook():
                 next_id = (max([t["id"] for t in group["bad_triggers"]] or [0]) + 1)
                 group["bad_triggers"].append({"id": next_id, "word": word, "message": msg})
                 send_message(bot_id, f'Bad trigger "{word}" added with id {next_id}.')
-                save_data(group_data)
+                save_data({"groups": group_data})
             else:
                 send_message(bot_id, 'Usage: !addbadtrigger "badword" [optional_message]')
 
@@ -245,7 +263,7 @@ def webhook():
             after = len(group["bad_triggers"])
             if before != after:
                 send_message(bot_id, f"Bad trigger {tid} removed.")
-                save_data(group_data)
+                save_data({"groups": group_data})
             else:
                 send_message(bot_id, "Invalid bad trigger ID.")
         except:
@@ -261,7 +279,7 @@ def webhook():
             "bad_triggers": [],
             "admin_enabled": True
         }
-        save_data(group_data)
+        save_data({"groups": group_data})
         send_message(bot_id, "Group data has been reset. Fresh start!")
 
     # !userid
@@ -297,14 +315,13 @@ def webhook():
         )
         send_message(bot_id, help_message)
 
-    # Triggers in normal messages
+    # Normal triggers
     if sender_type == "user":
-        lowered = text.lower()
-        # Normal triggers
         for t in group["triggers"]:
             if t["word"].lower() in lowered:
                 if not lowered.startswith("trigger "):
                     send_message(bot_id, t["response"])
+
     # Bad triggers
     for bt in group["bad_triggers"]:
         if bt["word"].lower() in lowered:
@@ -314,15 +331,12 @@ def webhook():
                 user_ids = []
                 pos = len(base_msg)
 
-                # Collect all IDs (owner + admins)
                 ids_to_ping = []
                 if group["owner"]:
                     ids_to_ping.append(group["owner"])
                 ids_to_ping.extend(group["admins"])
 
-                # Add each mention separately
                 for idx, uid in enumerate(ids_to_ping):
-                    # Give each mention its own placeholder text
                     mention_text = f"@admin{idx+1}"
                     base_msg += mention_text + " "
                     loci.append([pos, len(mention_text)])
